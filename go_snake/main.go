@@ -94,7 +94,7 @@ func (g *Game) Run() {
 		time.Sleep(g.speed * time.Millisecond)
 
 		if currkey == keyboard.KeyEsc || currchar == 'q' || currchar == 'Q' {
-			break
+			os.Exit(0)
 		}
 
 		if currchar == 'w' || currchar == 'W' || currkey == keyboard.KeyArrowUp {
