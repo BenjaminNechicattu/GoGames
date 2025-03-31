@@ -7,3 +7,6 @@ Games Deveoped In Golang
 ( (_-.( (_) )____( (_-. /(__)\  )    (  )__) \__ \
  \___/ \___/(_ _) \___/(__)(__)(_/\/\_)(____)(___/
  ```
+
+
+Feel Free to make PR. Afterall, its never settle.
