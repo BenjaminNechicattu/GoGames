@@ -5,8 +5,10 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	"image/color"
 )
 
 //go:embed icon.png
@@ -26,6 +28,68 @@ var winLines = [8][3][2]int{
 	{{0, 2}, {1, 2}, {2, 2}},
 	{{0, 0}, {1, 1}, {2, 2}}, // diagonals
 	{{0, 2}, {1, 1}, {2, 0}},
+}
+
+// createSplashScreen creates the splash screen content
+func createSplashScreen(onStart func(), onQuit func()) fyne.CanvasObject {
+	// ASCII Art for the game
+	asciiArt := `
+   _  _____   __  __   ___                      
+  | |/ / _ \  \ \/ /  / __|__ _ _ __  ___  
+  | ' < (_) |  >  <  | (_ / _' | '  \/ -_) 
+  |_|\_\___/  /_/\_\  \___\__,_|_|_|_\___| 
+`
+	
+	// Create text elements with monospace font
+	artText := canvas.NewText(asciiArt, color.RGBA{R: 0, G: 150, B: 200, A: 255})
+	artText.TextStyle = fyne.TextStyle{Monospace: true}
+	artText.Alignment = fyne.TextAlignCenter
+	
+	byText := canvas.NewText("by SAPPHIRE_KNIGHT", color.RGBA{R: 100, G: 100, B: 255, A: 255})
+	byText.Alignment = fyne.TextAlignCenter
+	byText.TextSize = 14
+	
+	enterText := canvas.NewText("Press ENTER to START a New Game", color.White)
+	enterText.Alignment = fyne.TextAlignCenter
+	enterText.TextSize = 12
+	
+	quitText := canvas.NewText("Press Q to QUIT the Game", color.White)
+	quitText.Alignment = fyne.TextAlignCenter
+	quitText.TextSize = 12
+	
+	techText := canvas.NewText("Developed in GoLang", color.RGBA{R: 150, G: 150, B: 150, A: 255})
+	techText.Alignment = fyne.TextAlignCenter
+	techText.TextSize = 10
+	techText.TextStyle = fyne.TextStyle{Italic: true}
+	
+	// Create buttons
+	startButton := widget.NewButton("START Game", onStart)
+	startButton.Importance = widget.HighImportance
+	
+	quitButton := widget.NewButton("QUIT", onQuit)
+	
+	// Layout
+	content := container.NewVBox(
+		container.NewPadded(artText),
+		container.NewCenter(byText),
+		widget.NewSeparator(),
+		container.NewPadded(
+			container.NewVBox(
+				enterText,
+				quitText,
+			),
+		),
+		container.NewPadded(
+			container.NewGridWithColumns(2,
+				startButton,
+				quitButton,
+			),
+		),
+		widget.NewSeparator(),
+		container.NewCenter(techText),
+	)
+	
+	return content
 }
 
 func main() {
@@ -251,14 +315,29 @@ func main() {
 	})
 	modeSelect.SetSelected("Player vs Computer")
 
-	content := container.NewVBox(
+	gameContent := container.NewVBox(
 		modeSelect,
 		status,
 		grid,
 		resetButton,
 	)
 
-	w.SetContent(content)
-	w.Resize(fyne.NewSize(300, 400))
+	// Create splash screen with callbacks
+	splashContent := createSplashScreen(
+		func() {
+			// Start game
+			w.SetContent(gameContent)
+			w.Resize(fyne.NewSize(300, 400))
+		},
+		func() {
+			// Quit
+			a.Quit()
+		},
+	)
+
+	// Show splash screen first
+	w.SetContent(splashContent)
+	w.Resize(fyne.NewSize(500, 400))
+	w.CenterOnScreen()
 	w.ShowAndRun()
 }
