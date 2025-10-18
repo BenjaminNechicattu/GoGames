@@ -14,9 +14,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
+var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 const (
 	cellSize     = 20
