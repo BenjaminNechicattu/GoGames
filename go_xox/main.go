@@ -39,35 +39,36 @@ func createSplashScreen(onStart func(), onQuit func()) fyne.CanvasObject {
   | ' < (_) |  >  <  | (_ / _' | '  \/ -_) 
   |_|\_\___/  /_/\_\  \___\__,_|_|_|_\___| 
 `
-	
+
 	// Create text elements with monospace font
 	artText := canvas.NewText(asciiArt, color.RGBA{R: 0, G: 150, B: 200, A: 255})
 	artText.TextStyle = fyne.TextStyle{Monospace: true}
 	artText.Alignment = fyne.TextAlignCenter
-	
+	artText.TextSize = 16
+
 	byText := canvas.NewText("by SAPPHIRE_KNIGHT", color.RGBA{R: 100, G: 100, B: 255, A: 255})
 	byText.Alignment = fyne.TextAlignCenter
 	byText.TextSize = 14
-	
+
 	enterText := canvas.NewText("Press ENTER to START a New Game", color.White)
 	enterText.Alignment = fyne.TextAlignCenter
 	enterText.TextSize = 12
-	
+
 	quitText := canvas.NewText("Press Q to QUIT the Game", color.White)
 	quitText.Alignment = fyne.TextAlignCenter
 	quitText.TextSize = 12
-	
+
 	techText := canvas.NewText("Developed in GoLang", color.RGBA{R: 150, G: 150, B: 150, A: 255})
 	techText.Alignment = fyne.TextAlignCenter
 	techText.TextSize = 10
 	techText.TextStyle = fyne.TextStyle{Italic: true}
-	
+
 	// Create buttons
 	startButton := widget.NewButton("START Game", onStart)
 	startButton.Importance = widget.HighImportance
-	
+
 	quitButton := widget.NewButton("QUIT", onQuit)
-	
+
 	// Layout
 	content := container.NewVBox(
 		container.NewPadded(artText),
@@ -88,7 +89,7 @@ func createSplashScreen(onStart func(), onQuit func()) fyne.CanvasObject {
 		widget.NewSeparator(),
 		container.NewCenter(techText),
 	)
-	
+
 	return content
 }
 
