@@ -360,7 +360,7 @@ func showSplashScreen(w fyne.Window, onStart func()) {
 	rule1 := widget.NewLabel("• Use Arrow Keys to move the snake")
 	rule1.Alignment = fyne.TextAlignCenter
 
-	rule2 := widget.NewLabel("• Eat red food to grow and score")
+	rule2 := widget.NewLabel("• Eat food to grow and score")
 	rule2.Alignment = fyne.TextAlignCenter
 
 	rule3 := widget.NewLabel("• Don't hit the walls or yourself")
