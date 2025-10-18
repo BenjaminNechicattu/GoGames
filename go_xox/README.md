@@ -30,7 +30,7 @@ A modern Tic-Tac-Toe game built with Go and Fyne, featuring both Player vs Playe
 
 ### Prerequisites
 
-- Go 1.16 or higher
+- Go 1.21 or higher
 - Fyne dependencies for your platform
 
 #### Linux Dependencies
