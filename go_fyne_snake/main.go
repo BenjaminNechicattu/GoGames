@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"image/color"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -11,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -44,6 +48,17 @@ var (
 	colorTextGray  = color.RGBA{200, 200, 200, 255}
 )
 
+type GameRecord struct {
+	PlayerName string    `json:"player_name"`
+	Score      int       `json:"score"`
+	Date       time.Time `json:"date"`
+}
+
+type ScoreHistory struct {
+	HighScore *GameRecord  `json:"high_score"`
+	AllPlays  []GameRecord `json:"all_plays"`
+}
+
 type Game struct {
 	snake         []Point
 	dir           Direction
@@ -57,7 +72,52 @@ type Game struct {
 	scoreLabel    *widget.Label
 	gameOverLabel *widget.Label
 	restartBtn    *widget.Button
+	viewScoresBtn *widget.Button
+	homeBtn       *widget.Button
+	bottomBar     *fyne.Container
+	scoreHistory  *ScoreHistory
+	window        fyne.Window
+	showSplash    func()
 	mu            sync.Mutex
+}
+
+func getScoreHistoryPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "score-history.json"
+	}
+	dataDir := filepath.Join(homeDir, ".local", "share", "fyne-snake")
+	os.MkdirAll(dataDir, 0755)
+	return filepath.Join(dataDir, "score-history.json")
+}
+
+func loadScoreHistory() *ScoreHistory {
+	path := getScoreHistoryPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return &ScoreHistory{
+			HighScore: &GameRecord{PlayerName: "Player", Score: 0, Date: time.Now()},
+			AllPlays:  []GameRecord{},
+		}
+	}
+
+	var history ScoreHistory
+	if err := json.Unmarshal(data, &history); err != nil {
+		return &ScoreHistory{
+			HighScore: &GameRecord{PlayerName: "Player", Score: 0, Date: time.Now()},
+			AllPlays:  []GameRecord{},
+		}
+	}
+	return &history
+}
+
+func saveScoreHistory(history *ScoreHistory) error {
+	path := getScoreHistoryPath()
+	data, err := json.MarshalIndent(history, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 func (g *Game) Draw() {
@@ -125,14 +185,44 @@ func (g *Game) Draw() {
 		gameOverText := canvas.NewText("Game Over!", color.White)
 		gameOverText.TextSize = 20
 		gameOverText.TextStyle = fyne.TextStyle{Bold: true}
-		gameOverText.Move(fyne.NewPos(float32(canvasWidth/2-80), float32(canvasHeight/2-40)))
+		gameOverText.Move(fyne.NewPos(float32(canvasWidth/2-80), float32(canvasHeight/2-60)))
 		g.canvas.Add(gameOverText)
 
 		// Score text
 		scoreText := canvas.NewText(fmt.Sprintf("Score: %d", g.score), color.White)
 		scoreText.TextSize = 12
-		scoreText.Move(fyne.NewPos(float32(canvasWidth/2-50), float32(canvasHeight/2+10)))
+		scoreText.Move(fyne.NewPos(float32(canvasWidth/2-50), float32(canvasHeight/2-20)))
 		g.canvas.Add(scoreText)
+
+		// High Score text
+		if g.scoreHistory != nil && g.scoreHistory.HighScore != nil {
+			highScoreText := canvas.NewText(fmt.Sprintf("High Score: %d by %s", g.scoreHistory.HighScore.Score, g.scoreHistory.HighScore.PlayerName), colorTextGray)
+			highScoreText.TextSize = 11
+			highScoreText.Move(fyne.NewPos(float32(canvasWidth/2-90), float32(canvasHeight/2+5)))
+			g.canvas.Add(highScoreText)
+		}
+
+		// Restart hint text
+		restartHint := canvas.NewText("Press ENTER to restart", colorTextGray)
+		restartHint.TextSize = 12
+		restartHint.Move(fyne.NewPos(float32(canvasWidth/2-90), float32(canvasHeight/2+35)))
+		g.canvas.Add(restartHint)
+
+		// Show View Scores and Home buttons in bottom bar
+		if g.viewScoresBtn != nil {
+			g.viewScoresBtn.Show()
+		}
+		if g.homeBtn != nil {
+			g.homeBtn.Show()
+		}
+	} else {
+		// Hide View Scores and Home buttons during gameplay
+		if g.viewScoresBtn != nil {
+			g.viewScoresBtn.Hide()
+		}
+		if g.homeBtn != nil {
+			g.homeBtn.Hide()
+		}
 	}
 
 	g.canvas.Refresh()
@@ -313,6 +403,12 @@ func (g *Game) Reset() {
 			if !g.MoveSnake() {
 				g.gameRunning = false
 				g.mu.Unlock()
+
+				// Always prompt for name on game over
+				fyne.Do(func() {
+					g.promptForName()
+				})
+
 				fyne.Do(g.Draw)
 				break
 			}
@@ -321,6 +417,110 @@ func (g *Game) Reset() {
 			fyne.Do(g.Draw)
 		}
 	}()
+}
+
+func (g *Game) promptForName() {
+	nameEntry := widget.NewEntry()
+	nameEntry.SetPlaceHolder("Enter your name")
+	nameEntry.SetText("Player")
+
+	// Check if it's a new high score
+	isHighScore := g.score > g.scoreHistory.HighScore.Score
+
+	var title string
+	var message string
+	if isHighScore {
+		title = "🎉 New High Score!"
+		message = fmt.Sprintf("Congratulations! New high score: %d", g.score)
+	} else {
+		title = "Game Over"
+		message = fmt.Sprintf("Your score: %d", g.score)
+	}
+
+	dialog.ShowCustomConfirm(title, "Save", "Skip",
+		container.NewVBox(
+			widget.NewLabel(message),
+			nameEntry,
+		),
+		func(save bool) {
+			playerName := "Player"
+			if save && nameEntry.Text != "" {
+				playerName = nameEntry.Text
+			}
+			g.saveGameRecord(playerName)
+			g.Draw()
+		},
+		g.window,
+	)
+}
+
+func (g *Game) saveGameRecord(playerName string) {
+	record := GameRecord{
+		PlayerName: playerName,
+		Score:      g.score,
+		Date:       time.Now(),
+	}
+
+	// Add to all plays
+	g.scoreHistory.AllPlays = append(g.scoreHistory.AllPlays, record)
+
+	// Update high score if necessary
+	if g.score > g.scoreHistory.HighScore.Score {
+		g.scoreHistory.HighScore = &record
+	}
+
+	saveScoreHistory(g.scoreHistory)
+}
+
+func (g *Game) showScoreHistory() {
+	if len(g.scoreHistory.AllPlays) == 0 {
+		dialog.ShowInformation("Score History", "No games played yet!", g.window)
+		return
+	}
+
+	// Create a list of all plays sorted by date (newest first)
+	plays := make([]GameRecord, len(g.scoreHistory.AllPlays))
+	copy(plays, g.scoreHistory.AllPlays)
+
+	// Sort by date descending
+	for i := 0; i < len(plays)-1; i++ {
+		for j := i + 1; j < len(plays); j++ {
+			if plays[j].Date.After(plays[i].Date) {
+				plays[i], plays[j] = plays[j], plays[i]
+			}
+		}
+	}
+
+	// Create content
+	var content string
+	content = fmt.Sprintf("High Score: %d by %s\n\n", g.scoreHistory.HighScore.Score, g.scoreHistory.HighScore.PlayerName)
+	content += "Recent Games:\n"
+	content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+
+	// Show last 20 plays
+	max := 20
+	if len(plays) < max {
+		max = len(plays)
+	}
+
+	for i := 0; i < max; i++ {
+		play := plays[i]
+		dateStr := play.Date.Format("2006-01-02 15:04")
+		content += fmt.Sprintf("%s - %s: %d\n", dateStr, play.PlayerName, play.Score)
+	}
+
+	if len(plays) > max {
+		content += fmt.Sprintf("\n... and %d more games", len(plays)-max)
+	}
+
+	// Create scrollable label
+	label := widget.NewLabel(content)
+	label.Wrapping = fyne.TextWrapWord
+
+	scroll := container.NewScroll(label)
+	scroll.SetMinSize(fyne.NewSize(400, 500))
+
+	dialog.ShowCustom("Score History", "Close", scroll, g.window)
 }
 
 type Point struct {
@@ -336,7 +536,7 @@ const (
 	Right
 )
 
-func showSplashScreen(w fyne.Window, onStart func()) {
+func showSplashScreen(w fyne.Window, onStart func(), history *ScoreHistory, onViewScores func()) {
 	// ASCII Art Title
 	title := widget.NewLabel(`    Go________              __           
     /   _____/ ____ _____  |  | __ ____  
@@ -351,33 +551,33 @@ func showSplashScreen(w fyne.Window, onStart func()) {
 	subtitle.Alignment = fyne.TextAlignCenter
 	subtitle.TextStyle = fyne.TextStyle{Bold: true}
 
+	highScoreLabel := widget.NewLabel(fmt.Sprintf("High Score: %d by %s", history.HighScore.Score, history.HighScore.PlayerName))
+	highScoreLabel.Alignment = fyne.TextAlignCenter
+	highScoreLabel.TextStyle = fyne.TextStyle{Bold: true, Italic: true}
+
 	rulesTitle := widget.NewLabel("GAME RULES:")
 	rulesTitle.Alignment = fyne.TextAlignCenter
 	rulesTitle.TextStyle = fyne.TextStyle{Bold: true}
 
-	rule1 := widget.NewLabel("• Use Arrow Keys to move the snake")
-	rule1.Alignment = fyne.TextAlignCenter
-
-	rule2 := widget.NewLabel("• Eat food to grow and score")
-	rule2.Alignment = fyne.TextAlignCenter
-
-	rule3 := widget.NewLabel("• Don't hit the walls or yourself")
-	rule3.Alignment = fyne.TextAlignCenter
-
-	rule4 := widget.NewLabel("• Press SPACE to pause/resume")
-	rule4.Alignment = fyne.TextAlignCenter
-
-	rule5 := widget.NewLabel("• Speed increases every 5 points")
-	rule5.Alignment = fyne.TextAlignCenter
+	rules := widget.NewLabel("• Use Arrow Keys to move the snake\n• Eat food to grow and score\n• Don't hit the walls or yourself\n• Press SPACE to pause/resume\n• Speed increases every 5 points")
+	rules.Alignment = fyne.TextAlignCenter
 
 	footer := widget.NewLabel("Developed in GoLang")
 	footer.Alignment = fyne.TextAlignCenter
 	footer.TextStyle = fyne.TextStyle{Italic: true}
 
+	footer2 := widget.NewLabel("powered by fyne GUI")
+	footer2.Alignment = fyne.TextAlignCenter
+	footer2.TextStyle = fyne.TextStyle{Italic: true}
+
 	startBtn := widget.NewButton("START GAME", func() {
 		onStart()
 	})
 	startBtn.Importance = widget.HighImportance
+
+	scoresBtn := widget.NewButton("View Scores", func() {
+		onViewScores()
+	})
 
 	quitBtn := widget.NewButton("QUIT", func() {
 		w.Close()
@@ -385,27 +585,38 @@ func showSplashScreen(w fyne.Window, onStart func()) {
 
 	buttons := container.NewHBox(
 		startBtn,
+		scoresBtn,
 		quitBtn,
 	)
+
+	enterHint := widget.NewLabel("Press ENTER to start")
+	enterHint.Alignment = fyne.TextAlignCenter
+	enterHint.TextStyle = fyne.TextStyle{Italic: true}
 
 	content := container.NewVBox(
 		container.NewCenter(title),
 		container.NewCenter(subtitle),
+		container.NewCenter(highScoreLabel),
 		widget.NewSeparator(),
 		container.NewCenter(rulesTitle),
-		container.NewCenter(rule1),
-		container.NewCenter(rule2),
-		container.NewCenter(rule3),
-		container.NewCenter(rule4),
-		container.NewCenter(rule5),
+		container.NewCenter(rules),
 		widget.NewSeparator(),
 		container.NewCenter(footer),
+		container.NewCenter(footer2),
 		widget.NewSeparator(),
 		container.NewCenter(buttons),
+		container.NewCenter(enterHint),
 	)
 
 	scrollContent := container.NewVScroll(content)
 	scrollContent.SetMinSize(fyne.NewSize(500, 550))
+
+	// Add keyboard handler for Enter key
+	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
+		if k.Name == fyne.KeyReturn || k.Name == fyne.KeyEnter {
+			onStart()
+		}
+	})
 
 	w.SetContent(container.NewCenter(scrollContent))
 	w.Resize(fyne.NewSize(520, 600))
@@ -418,67 +629,104 @@ func main() {
 	scoreLabel := widget.NewLabel("Score: 0")
 	gameOverLabel := widget.NewLabel("")
 	restartBtn := widget.NewButton("Restart", nil)
+	viewScoresBtn := widget.NewButton("View Scores", nil)
+	homeBtn := widget.NewButton("Home", nil)
 
 	gameArea := container.NewWithoutLayout()
+
+	// Load score history
+	scoreHistory := loadScoreHistory()
 
 	g := &Game{
 		canvas:        gameArea,
 		scoreLabel:    scoreLabel,
 		gameOverLabel: gameOverLabel,
 		restartBtn:    restartBtn,
+		viewScoresBtn: viewScoresBtn,
+		homeBtn:       homeBtn,
+		scoreHistory:  scoreHistory,
+		window:        w,
 	}
 
 	restartBtn.OnTapped = g.Reset
-
-	// Keyboard handling
-	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
-		g.mu.Lock()
-		defer g.mu.Unlock()
-
-		switch k.Name {
-		case fyne.KeyUp:
-			if g.dir != Down && g.gameRunning {
-				g.dir = Up
-			}
-		case fyne.KeyDown:
-			if g.dir != Up && g.gameRunning {
-				g.dir = Down
-			}
-		case fyne.KeyLeft:
-			if g.dir != Right && g.gameRunning {
-				g.dir = Left
-			}
-		case fyne.KeyRight:
-			if g.dir != Left && g.gameRunning {
-				g.dir = Right
-			}
-		case fyne.KeySpace:
-			if g.gameRunning {
-				g.paused = !g.paused
-				fyne.Do(g.Draw)
-			}
+	viewScoresBtn.OnTapped = func() {
+		g.showScoreHistory()
+	}
+	homeBtn.OnTapped = func() {
+		g.gameRunning = false
+		if g.showSplash != nil {
+			g.showSplash()
 		}
-	})
+	}
+
+	// Initially hide the View Scores and Home buttons
+	viewScoresBtn.Hide()
+	homeBtn.Hide()
 
 	// UI layout
+	rightButtons := container.NewHBox(homeBtn, viewScoresBtn, restartBtn)
 	bottomBar := container.NewBorder(
 		nil,
 		nil,
 		scoreLabel,
-		restartBtn,
+		rightButtons,
 		container.NewCenter(gameOverLabel),
 	)
+	g.bottomBar = bottomBar
 
 	// Function to start the game
 	startGame := func() {
+		// Set keyboard handling for game
+		w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
+			g.mu.Lock()
+			defer g.mu.Unlock()
+
+			switch k.Name {
+			case fyne.KeyUp:
+				if g.dir != Down && g.gameRunning {
+					g.dir = Up
+				}
+			case fyne.KeyDown:
+				if g.dir != Up && g.gameRunning {
+					g.dir = Down
+				}
+			case fyne.KeyLeft:
+				if g.dir != Right && g.gameRunning {
+					g.dir = Left
+				}
+			case fyne.KeyRight:
+				if g.dir != Left && g.gameRunning {
+					g.dir = Right
+				}
+			case fyne.KeySpace:
+				if g.gameRunning {
+					g.paused = !g.paused
+					fyne.Do(g.Draw)
+				}
+			case fyne.KeyReturn, fyne.KeyEnter:
+				if !g.gameRunning {
+					go g.Reset()
+				}
+			}
+		})
+
 		w.SetContent(container.NewBorder(nil, bottomBar, nil, nil, gameArea))
 		w.Resize(fyne.NewSize(float32(canvasWidth+6), float32(canvasHeight+60)))
 		w.SetFixedSize(true)
 		g.Reset()
 	}
 
+	// Show splash screen function
+	var showSplash func()
+	showSplash = func() {
+		showSplashScreen(w, startGame, scoreHistory, func() {
+			g.showScoreHistory()
+		})
+	}
+	g.showSplash = showSplash
+
 	// Show splash screen first
-	showSplashScreen(w, startGame)
+	showSplash()
 
 	w.ShowAndRun()
 }
